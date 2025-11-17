@@ -5,47 +5,68 @@ from pathlib import Path
 
 st.title('语言检测以及纠正')
 
-# 从文件读取API密钥
+# 从 Streamlit Secrets 或本地文件读取API密钥
 def load_api_key():
-    """从.streamlit/OPEN_AI_KEY文件读取API密钥"""
-    # 向上查找项目根目录（包含.streamlit目录的目录）
-    current_path = Path(__file__).resolve().parent
-    project_root = None
-    
-    # 向上查找直到找到包含.streamlit目录的目录
-    for parent in [current_path] + list(current_path.parents):
-        streamlit_dir = parent / ".streamlit"
-        if streamlit_dir.exists() and streamlit_dir.is_dir():
-            project_root = parent
-            break
-    
-    if project_root is None:
-        # 如果找不到，尝试使用当前文件所在目录的父目录（项目根目录）
-        project_root = current_path.parent
-    
-    key_file = project_root / ".streamlit" / "OPEN_AI_KEY"
-    
+    """优先从 Streamlit Secrets 读取API密钥，如果不存在则从本地文件读取（用于本地开发）"""
+    # 方法1: 尝试从 Streamlit Secrets 读取（用于 Streamlit Cloud）
     try:
-        with open(key_file, 'r', encoding='utf-8') as f:
-            api_key = f.read().strip()
-            if not api_key:
-                raise ValueError("API密钥文件为空")
-            return api_key
-    except FileNotFoundError:
-        error_msg = f"未找到API密钥文件: {key_file}\n"
-        error_msg += f"请确保在项目根目录下创建 .streamlit/OPEN_AI_KEY 文件"
-        if hasattr(st, 'error'):
-            st.error(error_msg)
-            st.stop()
-        else:
-            raise FileNotFoundError(error_msg)
-    except Exception as e:
-        error_msg = f"读取API密钥文件时出错: {str(e)}\n文件路径: {key_file}"
-        if hasattr(st, 'error'):
-            st.error(error_msg)
-            st.stop()
-        else:
-            raise Exception(error_msg)
+        # 检查 secrets 是否存在且包含 openai_key
+        if hasattr(st, 'secrets') and st.secrets:
+            # 尝试从 secrets 中读取
+            if 'openai' in st.secrets and 'api_key' in st.secrets['openai']:
+                api_key = st.secrets['openai']['api_key']
+                if api_key and api_key.strip():
+                    return api_key.strip()
+            # 或者直接从 secrets 根目录读取
+            if 'OPENAI_API_KEY' in st.secrets:
+                api_key = st.secrets['OPENAI_API_KEY']
+                if api_key and api_key.strip():
+                    return api_key.strip()
+    except Exception:
+        # 如果 secrets 不存在或读取失败，继续尝试本地文件
+        pass
+    
+    # 方法2: 从本地文件读取（用于本地开发）
+    try:
+        # 向上查找项目根目录（包含.streamlit目录的目录）
+        current_path = Path(__file__).resolve().parent
+        project_root = None
+        
+        # 向上查找直到找到包含.streamlit目录的目录
+        for parent in [current_path] + list(current_path.parents):
+            streamlit_dir = parent / ".streamlit"
+            if streamlit_dir.exists() and streamlit_dir.is_dir():
+                project_root = parent
+                break
+        
+        if project_root is None:
+            # 如果找不到，尝试使用当前文件所在目录的父目录（项目根目录）
+            project_root = current_path.parent
+        
+        key_file = project_root / ".streamlit" / "OPEN_AI_KEY"
+        
+        if key_file.exists():
+            with open(key_file, 'r', encoding='utf-8') as f:
+                api_key = f.read().strip()
+                if api_key:
+                    return api_key
+    except Exception:
+        # 本地文件读取失败，继续
+        pass
+    
+    # 如果两种方法都失败，显示错误
+    error_msg = "无法加载API密钥。\n\n"
+    error_msg += "**对于 Streamlit Cloud 部署：**\n"
+    error_msg += "请在 Streamlit Cloud 的 Secrets 管理中添加：\n"
+    error_msg += "```toml\n[openai]\napi_key = \"your-api-key-here\"\n```\n\n"
+    error_msg += "**对于本地开发：**\n"
+    error_msg += "请在项目根目录下创建 `.streamlit/OPEN_AI_KEY` 文件并填入API密钥"
+    
+    if hasattr(st, 'error'):
+        st.error(error_msg)
+        st.stop()
+    else:
+        raise ValueError(error_msg)
 
 # 初始化OpenAI客户端（延迟初始化，避免在非streamlit环境下出错）
 @st.cache_resource
